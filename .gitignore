@@ -1,0 +1,13 @@
+*.bak
+*.log
+*.cache
+*.tmp
+.DS_Store
+.env*
+/.fleet
+/.idea
+/.phpunit.cache
+/.vscode
+/node_modules
+Thumbs.db
+tmp
