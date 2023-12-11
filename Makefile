@@ -1,9 +1,11 @@
 $(VERBOSE).SILENT:
 
+SHELL := /bin/bash
 .DEFAULT_GOAL := help
 .PHONY: help
 
 $(shell chmod +x ./macmake/*.sh)
+$(shell chmod +x ./tests/*.sh)
 
 CYAN := \033[0;36m
 NC := \033[0m
@@ -22,17 +24,17 @@ install: # copy Makefile from macmake project to home dir
 	chmod -R -w ~/macmake
 	ln -sf $(PWD)/Makefile ~/Makefile
 
-base-auth-gen:
+base-auth-gen: # generate htpasswd. Usage: make base-auth-gen u=username
 	if ! command -v htpasswd &> /dev/null; then echo "htpasswd not found"; exit 1; fi
 	if [ -z "$(u)" ]; then echo "set u=username as an argument"; exit 1; fi
 	htpasswd -n "$(u)"
 
-dock-hide:
+dock-hide: # permanently hide dock
 	defaults write com.apple.dock autohide -bool true && killall Dock
 	defaults write com.apple.dock autohide-delay -float 1000 && killall Dock
 	defaults write com.apple.dock no-bouncing -bool TRUE && killall Dock
 
-dock-show:
+dock-show: # show dock (default)
 	defaults write com.apple.dock autohide -bool false && killall Dock
 	defaults delete com.apple.dock autohide-delay && killall Dock
 	defaults write com.apple.dock no-bouncing -bool FALSE && killall Dock
@@ -45,3 +47,6 @@ passwd-gen: # generate password. Usage: make passwd-gen l=12 s=5 (default length
 php-switch: # switch php version. Usage: make php-switch v=8.3
 	if [ -z "$(v)" ]; then echo "set v=php_version as an argument"; exit 1; fi
 	./macmake/php-switch.sh $(v)
+
+test-passwd-gen: # run tests for passwd-gen
+	tests/passwd-gen.test.sh

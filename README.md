@@ -46,7 +46,14 @@ Generate an Apache htpasswd file for basic authentication.
 make base-auth-gen u=<username>
 ```
 
+## Development
+
+Test password generation:
+
+```bash
+make test-passwd-gen
+```
+
 ## TODO:
 
 - Docs for the rest of the targets
-- Write tests
