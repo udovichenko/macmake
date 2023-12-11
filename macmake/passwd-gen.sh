@@ -3,6 +3,7 @@
 length=$1
 default_length=20
 
+special_chars=('!@#$%^&*_+')
 spec_chars_max_count=$2
 default_spec_chars_max_count=2
 
@@ -39,7 +40,6 @@ add_special_chars() {
 		return
 	fi
 
-	special_chars=('!@#$%^&*_+')
 	special_chars_count=$(shuf -i1-$spec_chars_max_count -n1)
 
 	for _ in $(seq 1 "$special_chars_count"); do

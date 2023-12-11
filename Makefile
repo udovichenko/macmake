@@ -1,9 +1,11 @@
 $(VERBOSE).SILENT:
 
+SHELL := /bin/bash
 .DEFAULT_GOAL := help
 .PHONY: help
 
 $(shell chmod +x ./macmake/*.sh)
+$(shell chmod +x ./tests/*.sh)
 
 CYAN := \033[0;36m
 NC := \033[0m
@@ -45,3 +47,6 @@ passwd-gen: # generate password. Usage: make passwd-gen l=12 s=5 (default length
 php-switch: # switch php version. Usage: make php-switch v=8.3
 	if [ -z "$(v)" ]; then echo "set v=php_version as an argument"; exit 1; fi
 	./macmake/php-switch.sh $(v)
+
+test-passwd-gen:
+	tests/passwd-gen.test.sh
