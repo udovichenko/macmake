@@ -5,7 +5,6 @@ SHELL := /bin/bash
 .PHONY: help
 
 $(shell chmod +x ./macmake/*.sh)
-$(shell chmod +x ./tests/*.sh)
 
 CYAN := \033[0;36m
 NC := \033[0m
@@ -48,5 +47,12 @@ php-switch: # switch php version. Usage: make php-switch v=8.3
 	if [ -z "$(v)" ]; then echo "set v=php_version as an argument"; exit 1; fi
 	./macmake/php-switch.sh $(v)
 
-test-passwd-gen: # run tests for passwd-gen
+exit-if-run-from-homedir:
+	if [ "$(PWD)" = "$(HOME)" ]; then echo "Run only from project dir"; exit 1; fi
+
+kill-by-port:
+	if [ -z "$(p)" ]; then echo "set p=port as an argument"; exit 1; fi
+	./macmake/kill-by-port.sh $(p)
+
+test-passwd-gen: exit-if-run-from-homedir # run tests for passwd-gen
 	tests/passwd-gen.test.sh
