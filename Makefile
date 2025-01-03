@@ -54,5 +54,8 @@ kill-by-port:
 	if [ -z "$(p)" ]; then echo "set p=port as an argument"; exit 1; fi
 	./macmake/kill-by-port.sh $(p)
 
+rclone-add-yc: # add yandex cloud bucket access to rclone config
+	./macmake/rclone-add-yc.sh
+
 test-passwd-gen: exit-if-run-from-homedir # run tests for passwd-gen
 	tests/passwd-gen.test.sh
