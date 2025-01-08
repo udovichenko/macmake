@@ -28,6 +28,9 @@ base-auth-gen: # generate htpasswd. Usage: make base-auth-gen u=username
 	if [ -z "$(u)" ]; then echo "set u=username as an argument"; exit 1; fi
 	htpasswd -n "$(u)"
 
+brew-upgrade: # upgrade brew packages
+	./macmake/brew-upgrade.sh
+
 dock-hide: # permanently hide dock
 	defaults write com.apple.dock autohide -bool true && killall Dock
 	defaults write com.apple.dock autohide-delay -float 1000 && killall Dock
