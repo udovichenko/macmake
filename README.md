@@ -46,6 +46,20 @@ Generate an Apache htpasswd file for basic authentication.
 make base-auth-gen u=<username>
 ```
 
+## clean-annas-filenames
+
+Clean filenames in a directory by removing specific patterns such as ISBNs, hash strings, 
+"Anna's Archive" text, and redundant separators.
+
+```bash
+make clean-annas-filenames d=path/to/dir
+```
+
+The command will:
+1. Show preview of changes
+2. Ask for confirmation
+3. Rename files if confirmed
+
 ## Development
 
 Test password generation:
@@ -57,3 +71,4 @@ make test-passwd-gen
 ## TODO:
 
 - Docs for the rest of the targets
+

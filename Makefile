@@ -31,6 +31,10 @@ base-auth-gen: # generate htpasswd. Usage: make base-auth-gen u=username
 brew-upgrade: # upgrade brew packages
 	./macmake/brew-upgrade.sh
 
+clean-annas-filenames: # clean filenames from specific patterns. Usage: make clean-annas-filenames d=path/to/dir
+	if [ -z "$(d)" ]; then echo "set d=directory_path as an argument"; exit 1; fi
+	./macmake/clean-annas-filenames.sh "$(d)"
+
 dock-hide: # permanently hide dock
 	defaults write com.apple.dock autohide -bool true && killall Dock
 	defaults write com.apple.dock autohide-delay -float 1000 && killall Dock
