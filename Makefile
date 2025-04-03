@@ -23,6 +23,15 @@ install: # copy Makefile from macmake project to home dir
 	chmod -R -w ~/macmake
 	ln -sf $(PWD)/Makefile ~/Makefile
 
+adminer-run:
+	./macmake/adminer.sh run
+
+adminer-update:
+	./macmake/adminer.sh update
+
+adminer-stop:
+	./macmake/adminer.sh stop
+
 base-auth-gen: # generate htpasswd. Usage: make base-auth-gen u=username
 	if ! command -v htpasswd &> /dev/null; then echo "htpasswd not found"; exit 1; fi
 	if [ -z "$(u)" ]; then echo "set u=username as an argument"; exit 1; fi
@@ -44,6 +53,9 @@ dock-show: # show dock (default)
 	defaults write com.apple.dock autohide -bool false && killall Dock
 	defaults delete com.apple.dock autohide-delay && killall Dock
 	defaults write com.apple.dock no-bouncing -bool FALSE && killall Dock
+
+mysql-create: # create mysql database
+	./macmake/mysql.sh create
 
 p: passwd-gen # alias for passwd-gen
 
