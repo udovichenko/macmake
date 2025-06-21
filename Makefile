@@ -66,6 +66,14 @@ php-switch: # switch php version. Usage: make php-switch v=8.3
 	if [ -z "$(v)" ]; then echo "set v=php_version as an argument"; exit 1; fi
 	./macmake/php-switch.sh $(v)
 
+rmhist: # remove a command from zsh history. Usage: make rmhist c="<command>"
+	if [ -z "$(c)" ]; then echo "set c=\"<command>\" as an argument"; exit 1; fi
+	./macmake/rmhist.sh "$(c)"
+
+rmhist-dry: # dry run for rmhist. Usage: make rmhist-dry c="<command>"
+	if [ -z "$(c)" ]; then echo "set c=\"<command>\" as an argument"; exit 1; fi
+	./macmake/rmhist.sh "$(c)" --dry-run
+
 exit-if-run-from-homedir:
 	if [ "$(PWD)" = "$(HOME)" ]; then echo "Run only from project dir"; exit 1; fi
 
