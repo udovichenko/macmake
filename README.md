@@ -46,6 +46,46 @@ Generate an Apache htpasswd file for basic authentication.
 make base-auth-gen u=<username>
 ```
 
+## calc
+
+Calculate responsive CSS value using viewport width formula. The output is automatically copied to clipboard.
+
+```bash
+make calc v=10,20,380,1440
+```
+
+Example output: `calc(6px + 0.9vw); /* 380:10 - 1440:20 */`
+
+Parameters (comma-separated):
+- `size1,size2` - sizes at breakpoints (required)
+- `breakpoint1,breakpoint2` - breakpoints in pixels (optional, defaults to 393:1440)
+
+Examples:
+```bash
+make calc v=10,20,380,1440   # Custom breakpoints
+make calc v=16,24             # Default breakpoints (393:1440)
+```
+
+## calc-limit
+
+Calculate responsive CSS value with a maximum limit using `min()`. The output is automatically copied to clipboard.
+
+```bash
+make calc-limit v=100,150,380,1440
+```
+
+Example output: `min(calc(82px + 4.7vw), 150px); /* 380:100 - 1440:150 */`
+
+Parameters (comma-separated):
+- `size1,size2` - sizes at breakpoints (required)
+- `breakpoint1,breakpoint2` - breakpoints in pixels (optional, defaults to 393:1440)
+
+Examples:
+```bash
+make calc-limit v=100,150,380,1440   # Custom breakpoints
+make calc-limit v=50,80               # Default breakpoints (393:1440)
+```
+
 ## clean-annas-filenames
 
 Clean filenames in a directory by removing specific patterns such as ISBNs, hash strings, 

@@ -40,6 +40,18 @@ base-auth-gen: # generate htpasswd. Usage: make base-auth-gen u=username
 brew-upgrade: # upgrade brew packages
 	./macmake/brew-upgrade.sh
 
+calc: # calculate responsive CSS value. Usage: make calc v=10,20,380,1440 or make calc v=16,24
+	if [ -z "$(v)" ]; then echo "Usage: make calc v=size1,size2[,breakpoint1,breakpoint2]"; exit 1; fi
+	OUTPUT=$$(node ./macmake/calc.js "$(v)"); \
+	echo "$$OUTPUT"; \
+	echo "$$OUTPUT" | pbcopy
+
+calc-limit: # calculate responsive CSS value with max limit. Usage: make calc-limit v=100,150,380,1440
+	if [ -z "$(v)" ]; then echo "Usage: make calc-limit v=size1,size2[,breakpoint1,breakpoint2]"; exit 1; fi
+	OUTPUT=$$(node ./macmake/calc-limit.js "$(v)"); \
+	echo "$$OUTPUT"; \
+	echo "$$OUTPUT" | pbcopy
+
 clean-annas-filenames: # clean filenames from specific patterns. Usage: make clean-annas-filenames d=path/to/dir
 	if [ -z "$(d)" ]; then echo "set d=directory_path as an argument"; exit 1; fi
 	./macmake/clean-annas-filenames.sh "$(d)"
