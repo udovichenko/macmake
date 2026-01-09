@@ -2,7 +2,7 @@
  * Calculate responsive CSS value with max limit
  * Equivalent to SCSS calculate-limited() function
  */
-function calculateLimited(size1, size2, breakpoint1 = 393, breakpoint2 = 1440) {
+function calculateLimited(size1, size2, breakpoint1 = 375, breakpoint2 = 1440) {
   const vwRaw = (size1 - size2) / (breakpoint1 - breakpoint2);
   const px = Math.round(size2 - breakpoint2 * vwRaw);
   const vw = Math.round(vwRaw * 1000) / 10; // *100 then round to 1 decimal
