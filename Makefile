@@ -17,9 +17,14 @@ i: install # alias for install
 install: # copy Makefile from macmake project to home dir
 	# exit if run from homedir
 	if [ "$(PWD)" = "$(HOME)" ]; then echo "Run only from project dir"; exit 1; fi
-	if ! cmp -s $(PWD)/Makefile ~/Makefile; then cp ~/Makefile ~/Makefile.$(shell date +%Y%m%d%H%M%S).bak; fi
+	if [ -f ~/Makefile ] && ! cmp -s $(PWD)/Makefile ~/Makefile; then cp ~/Makefile ~/Makefile.$(shell date +%Y%m%d%H%M%S).bak; fi
 	if [ -d ~/macmake ]; then chmod -R +w ~/macmake; fi
 	cp -r $(PWD)/macmake ~
+	if [ -d ~/macmake/bin ]; then find ~/macmake/bin -type f -exec chmod +x {} \; ; fi
+	touch ~/.zshrc
+	if ! grep -qs 'macmake/bin' ~/.zshrc && ! zsh -ic '[[ ":$$PATH:" == *":$$HOME/macmake/bin:"* ]]' >/dev/null 2>&1; then \
+		printf '\n# macmake bin\ncase ":$$PATH:" in\n  *":$$HOME/macmake/bin:"*) ;;\n  *) export PATH="$$HOME/macmake/bin:$$PATH" ;;\nesac\n' >> ~/.zshrc; \
+	fi
 	chmod -R -w ~/macmake
 	ln -sf $(PWD)/Makefile ~/Makefile
 

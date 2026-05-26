@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+if [[ $# -eq 0 ]]; then
+	echo-error "Usage: $0 png-to-png-and-webp <source-png-icon(s)>"
+	return 1
+fi
+
+for src_icon in "$@"; do
+	if [[ ! -f "$src_icon" ]]; then
+		echo-error "Source icon '$src_icon' does not exist"
+		continue
+	fi
+
+	base_name="$(basename "$src_icon" .png)"
+	dir_name="$(dirname "$src_icon")"
+
+	pngquant --quality=65-80 "$src_icon" --output "$dir_name/$base_name-s.png"
+	cwebp -q 90 "$src_icon" -o "$dir_name/$base_name.webp"
+
+	echo ""
+	echo "Converted $src_icon to:"
+	echo "$dir_name/$base_name-s.png"
+	echo "$dir_name/$base_name.webp"
+done

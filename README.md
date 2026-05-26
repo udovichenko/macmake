@@ -7,10 +7,8 @@ generating passwords.
 
 ## Getting Started
 
-Make sure you don't have any existing Makefile in your home directory. The
-Makefile will overwrite any existing files with the same name.
-Backup of old `~/Makefile` will be created as `~/Makefile.<datetime>.bak`
-though.
+If you already have a Makefile in your home directory, the install step creates
+a backup as `~/Makefile.<datetime>.bak` before replacing it.
 To get started, clone the repository and use the provided Makefile to execute
 different targets. The Makefile includes several targets to help you with common
 development tasks.
@@ -32,7 +30,9 @@ Display a list of available targets along with their descriptions.
 ## install
 
 Copy the `Makefile` and `./macmake` from the MacMake project to your home
-directory.
+directory. Files in `~/macmake/bin` are made executable and the install step
+adds `~/macmake/bin` to your zsh `PATH` when it is not already available, so
+you can run commands like `png-png-webp` from any directory.
 
 ```bash
 make install
@@ -111,4 +111,3 @@ make test-passwd-gen
 ## TODO:
 
 - Docs for the rest of the targets
-
