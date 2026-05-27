@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+
+print_usage() {
+	echo "Usage: $0 [-t] [-r] [-b] [-l] <source-image(s)>"
+	echo "If no side flags are given, trims all sides."
+}
+
+if [[ $# -eq 0 ]]; then
+	print_usage
+	exit 1
+fi
+
+missing=()
+
+for command_name in magick perl; do
+	if ! command -v "$command_name" >/dev/null 2>&1; then
+		missing+=("$command_name")
+	fi
+done
+
+if [[ ${#missing[@]} -gt 0 ]]; then
+	echo "Missing required command(s): ${missing[*]}"
+	echo "Install them and run this command again."
+	exit 1
+fi
+
+trim_top=0
+trim_right=0
+trim_bottom=0
+trim_left=0
+has_side_flags=0
+src_files=()
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-t)
+			trim_top=1
+			has_side_flags=1
+			;;
+		-r)
+			trim_right=1
+			has_side_flags=1
+			;;
+		-b)
+			trim_bottom=1
+			has_side_flags=1
+			;;
+		-l)
+			trim_left=1
+			has_side_flags=1
+			;;
+		-h|--help)
+			print_usage
+			exit 0
+			;;
+		-*)
+			echo "Unknown option: $1"
+			print_usage
+			exit 1
+			;;
+		*)
+			src_files+=("$1")
+			;;
+	esac
+	shift
+done
+
+if [[ ${#src_files[@]} -eq 0 ]]; then
+	print_usage
+	exit 1
+fi
+
+if [[ $has_side_flags -eq 0 ]]; then
+	trim_top=1
+	trim_right=1
+	trim_bottom=1
+	trim_left=1
+fi
+
+tmp_dirs=()
+
+cleanup() {
+	for tmp_dir in "${tmp_dirs[@]}"; do
+		if [[ -n "$tmp_dir" && -d "$tmp_dir" ]]; then
+			rm -rf "$tmp_dir"
+		fi
+	done
+}
+
+trap cleanup EXIT
+
+prompt_replace() {
+	local output_file="$1"
+	local answer
+
+	if [[ ! -e "$output_file" ]]; then
+		return 0
+	fi
+
+	read -r -p "Replace existing '$output_file'? [y/N] " answer
+	case "$answer" in
+		[yY]|[yY][eE][sS])
+			return 0
+			;;
+		*)
+			echo "Skipped $output_file"
+			return 1
+			;;
+	esac
+}
+
+trimmed_file_name() {
+	local src_file="$1"
+	local file_name
+	local dir_name
+	local base_name
+	local src_ext
+
+	file_name="$(basename "$src_file")"
+	dir_name="$(dirname "$src_file")"
+
+	if [[ "$file_name" == *.* && "${file_name%.*}" != "" ]]; then
+		base_name="${file_name%.*}"
+		src_ext="${file_name##*.}"
+		echo "$dir_name/$base_name-trim.$src_ext"
+	else
+		echo "$dir_name/$file_name-trim"
+	fi
+}
+
+image_width() {
+	magick "$1[0]" -auto-orient -format "%w" info:
+}
+
+image_height() {
+	magick "$1[0]" -auto-orient -format "%h" info:
+}
+
+crop_geometry() {
+	local src_file="$1"
+	local width="$2"
+	local height="$3"
+
+	magick "$src_file[0]" -alpha off -depth 8 rgb:- | perl -e '
+		use strict;
+		use warnings;
+
+		my ($width, $height, $trim_top, $trim_right, $trim_bottom, $trim_left) = @ARGV;
+		binmode STDIN;
+		local $/;
+		my $data = <STDIN>;
+		die "Unexpected pixel data length\n" if length($data) < $width * $height * 3;
+
+		sub pixel {
+			my ($x, $y) = @_;
+			return substr($data, (($y * $width) + $x) * 3, 3);
+		}
+
+		sub row_matches {
+			my ($y, $x0, $x1, $color) = @_;
+			for my $x ($x0 .. $x1) {
+				return 0 if pixel($x, $y) ne $color;
+			}
+			return 1;
+		}
+
+		sub column_matches {
+			my ($x, $y0, $y1, $color) = @_;
+			for my $y ($y0 .. $y1) {
+				return 0 if pixel($x, $y) ne $color;
+			}
+			return 1;
+		}
+
+		my $top_color = pixel(0, 0);
+		my $right_color = pixel($width - 1, $height - 1);
+		my $bottom_color = pixel(0, $height - 1);
+		my $left_color = pixel(0, 0);
+		my ($x0, $y0, $x1, $y1) = (0, 0, $width - 1, $height - 1);
+
+		my $changed = 1;
+		while ($changed) {
+			$changed = 0;
+
+			while ($trim_top && $y0 < $y1 && row_matches($y0, $x0, $x1, $top_color)) {
+				$y0++;
+				$changed = 1;
+			}
+
+			while ($trim_right && $x0 < $x1 && column_matches($x1, $y0, $y1, $right_color)) {
+				$x1--;
+				$changed = 1;
+			}
+
+			while ($trim_bottom && $y0 < $y1 && row_matches($y1, $x0, $x1, $bottom_color)) {
+				$y1--;
+				$changed = 1;
+			}
+
+			while ($trim_left && $x0 < $x1 && column_matches($x0, $y0, $y1, $left_color)) {
+				$x0++;
+				$changed = 1;
+			}
+		}
+
+		printf "%dx%d+%d+%d\n", $x1 - $x0 + 1, $y1 - $y0 + 1, $x0, $y0;
+	' "$width" "$height" "$trim_top" "$trim_right" "$trim_bottom" "$trim_left"
+}
+
+for src_file in "${src_files[@]}"; do
+	if [[ ! -f "$src_file" ]]; then
+		echo "Source file '$src_file' does not exist"
+		continue
+	fi
+
+	output_file="$(trimmed_file_name "$src_file")"
+	if ! prompt_replace "$output_file"; then
+		continue
+	fi
+
+	tmp_dir="$(mktemp -d)"
+	tmp_dirs+=("$tmp_dir")
+	current_file="$tmp_dir/source.png"
+
+	if ! magick "$src_file[0]" -auto-orient "$current_file"; then
+		echo "Failed to read $src_file"
+		continue
+	fi
+
+	width="$(image_width "$current_file")"
+	height="$(image_height "$current_file")"
+	if [[ -z "$width" || -z "$height" || "$width" -lt 1 || "$height" -lt 1 ]]; then
+		echo "Failed to read image dimensions for $src_file"
+		continue
+	fi
+
+	echo ""
+	echo "Trimming $src_file"
+
+	crop_geometry="$(crop_geometry "$current_file" "$width" "$height")"
+	if [[ -z "$crop_geometry" ]]; then
+		echo "Failed to calculate trim bounds for $src_file"
+		continue
+	fi
+
+	if magick "$current_file" -crop "$crop_geometry" +repage "$output_file"; then
+		echo "Created $output_file"
+	else
+		echo "Failed to create $output_file"
+	fi
+done
