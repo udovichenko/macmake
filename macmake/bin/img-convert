@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+
+tool_name="${IMG_CONVERT_TOOL:-$(basename "$0")}"
+target_format="${IMG_CONVERT_FORMAT:-}"
+
+case "$tool_name" in
+	img-jpg)
+		target_format="jpg"
+		;;
+	img-webp)
+		target_format="webp"
+		;;
+	img-png)
+		target_format="png"
+		;;
+esac
+
+print_usage() {
+	echo "Usage: $tool_name [-f] <source-image(s)>"
+	echo "Without -f, same-format sources are written as name-s.$target_format."
+	echo "With -f, the target file is overwritten."
+}
+
+if [[ -z "$target_format" ]]; then
+	echo "Unknown target format for $tool_name"
+	exit 1
+fi
+
+if [[ $# -eq 0 ]]; then
+	print_usage
+	exit 1
+fi
+
+force=0
+src_files=()
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-f)
+			force=1
+			;;
+		-h|--help)
+			print_usage
+			exit 0
+			;;
+		-*)
+			echo "Unknown option: $1"
+			print_usage
+			exit 1
+			;;
+		*)
+			src_files+=("$1")
+			;;
+	esac
+	shift
+done
+
+if [[ ${#src_files[@]} -eq 0 ]]; then
+	print_usage
+	exit 1
+fi
+
+missing=()
+
+case "$target_format" in
+	jpg)
+		required_commands=(magick)
+		;;
+	webp)
+		required_commands=(cwebp magick)
+		;;
+	png)
+		required_commands=(pngquant magick)
+		;;
+esac
+
+for command_name in "${required_commands[@]}"; do
+	if ! command -v "$command_name" >/dev/null 2>&1; then
+		missing+=("$command_name")
+	fi
+done
+
+if [[ ${#missing[@]} -gt 0 ]]; then
+	echo "Missing required command(s): ${missing[*]}"
+	echo "Install them and run this command again."
+	exit 1
+fi
+
+tmp_dirs=()
+
+cleanup() {
+	for tmp_dir in "${tmp_dirs[@]}"; do
+		if [[ -n "$tmp_dir" && -d "$tmp_dir" ]]; then
+			rm -rf "$tmp_dir"
+		fi
+	done
+}
+
+trap cleanup EXIT
+
+lowercase() {
+	printf "%s" "$1" | tr "[:upper:]" "[:lower:]"
+}
+
+file_format() {
+	case "$1" in
+		png)
+			echo "png"
+			;;
+		webp)
+			echo "webp"
+			;;
+		jpg|jpeg|jpe)
+			echo "jpg"
+			;;
+		tif|tiff)
+			echo "tiff"
+			;;
+		*)
+			echo "$1"
+			;;
+	esac
+}
+
+output_file_name() {
+	local src_file="$1"
+	local src_format="$2"
+	local file_name
+	local dir_name
+	local base_name
+	local suffix
+
+	file_name="$(basename "$src_file")"
+	dir_name="$(dirname "$src_file")"
+
+	if [[ "$file_name" == *.* && "${file_name%.*}" != "" ]]; then
+		base_name="${file_name%.*}"
+	else
+		base_name="$file_name"
+	fi
+
+	suffix=""
+	if [[ $force -eq 0 && "$src_format" == "$target_format" ]]; then
+		suffix="-s"
+	fi
+
+	echo "$dir_name/$base_name$suffix.$target_format"
+}
+
+same_file() {
+	local first="$1"
+	local second="$2"
+
+	[[ "$(cd "$(dirname "$first")" && pwd -P)/$(basename "$first")" == "$(cd "$(dirname "$second")" && pwd -P)/$(basename "$second")" ]]
+}
+
+make_tmp_dir() {
+	local tmp_dir
+	tmp_dir="$(mktemp -d)"
+	tmp_dirs+=("$tmp_dir")
+	echo "$tmp_dir"
+}
+
+final_output_path() {
+	local src_file="$1"
+	local output_file="$2"
+	local tmp_dir
+
+	if [[ -e "$output_file" ]] && same_file "$src_file" "$output_file"; then
+		tmp_dir="$(make_tmp_dir)"
+		echo "$tmp_dir/output.$target_format"
+	else
+		echo "$output_file"
+	fi
+}
+
+finish_output() {
+	local tmp_output_file="$1"
+	local output_file="$2"
+
+	if [[ "$tmp_output_file" != "$output_file" ]]; then
+		mv "$tmp_output_file" "$output_file"
+	fi
+}
+
+convert_to_jpg() {
+	local src_file="$1"
+	local output_file="$2"
+	local tmp_output_file
+
+	tmp_output_file="$(final_output_path "$src_file" "$output_file")"
+
+	if magick "${src_file}[0]" -auto-orient -background white -alpha remove -alpha off -quality 90 "$tmp_output_file"; then
+		finish_output "$tmp_output_file" "$output_file"
+	else
+		return 1
+	fi
+}
+
+convert_to_webp() {
+	local src_file="$1"
+	local output_file="$2"
+	local tmp_output_file
+	local tmp_dir
+	local tmp_png_file
+
+	tmp_output_file="$(final_output_path "$src_file" "$output_file")"
+
+	if cwebp -q 90 "$src_file" -o "$tmp_output_file"; then
+		finish_output "$tmp_output_file" "$output_file"
+		return 0
+	fi
+
+	tmp_dir="$(make_tmp_dir)"
+	tmp_png_file="$tmp_dir/source.png"
+	if magick "${src_file}[0]" -auto-orient "$tmp_png_file" && cwebp -q 90 "$tmp_png_file" -o "$tmp_output_file"; then
+		finish_output "$tmp_output_file" "$output_file"
+		return 0
+	fi
+
+	return 1
+}
+
+convert_to_png() {
+	local src_file="$1"
+	local output_file="$2"
+	local src_format="$3"
+	local tmp_output_file
+	local tmp_dir
+	local png_input
+
+	tmp_output_file="$(final_output_path "$src_file" "$output_file")"
+
+	if [[ "$src_format" == "png" ]]; then
+		png_input="$src_file"
+	else
+		tmp_dir="$(make_tmp_dir)"
+		png_input="$tmp_dir/source.png"
+		if ! magick "${src_file}[0]" -auto-orient "$png_input"; then
+			return 1
+		fi
+	fi
+
+	if pngquant --force --quality=65-80 "$png_input" --output "$tmp_output_file"; then
+		finish_output "$tmp_output_file" "$output_file"
+	else
+		return 1
+	fi
+}
+
+for src_file in "${src_files[@]}"; do
+	if [[ ! -f "$src_file" ]]; then
+		echo "Source file '$src_file' does not exist"
+		continue
+	fi
+
+	file_name="$(basename "$src_file")"
+	if [[ "$file_name" == *.* && "${file_name%.*}" != "" ]]; then
+		src_ext="$(lowercase "${file_name##*.}")"
+	else
+		src_ext=""
+	fi
+	src_format="$(file_format "$src_ext")"
+	output_file="$(output_file_name "$src_file" "$src_format")"
+
+	echo ""
+	echo "Converting $src_file"
+
+	case "$target_format" in
+		jpg)
+			if convert_to_jpg "$src_file" "$output_file"; then
+				echo "Created $output_file"
+			else
+				echo "Failed to create $output_file"
+			fi
+			;;
+		webp)
+			if convert_to_webp "$src_file" "$output_file"; then
+				echo "Created $output_file"
+			else
+				echo "Failed to create $output_file"
+			fi
+			;;
+		png)
+			if convert_to_png "$src_file" "$output_file" "$src_format"; then
+				echo "Created $output_file"
+			else
+				echo "Failed to create $output_file"
+			fi
+			;;
+	esac
+done

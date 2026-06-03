@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMG_CONVERT_TOOL=img-webp IMG_CONVERT_FORMAT=webp exec "$script_dir/img-convert" "$@"
