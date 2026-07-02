@@ -100,6 +100,85 @@ The command will:
 2. Ask for confirmation
 3. Rename files if confirmed
 
+## Image utilities
+
+All commands accept one or more files. Resize and conversion commands support
+`-w <width>`, `-h <height>`, and `-Q` for maximum quality.
+
+### img-info
+
+```bash
+img-info 1.jpg
+# 1.jpg: 882 x 1177, 252 KB
+```
+
+### img-resize
+
+```bash
+img-resize -w 300 1.jpg
+# Creates 1-w300.jpg
+
+img-resize -w 300 -h 400 2.png
+# Creates 2-w300h400.png
+
+img-resize -Q -w 1200 3.webp
+# Creates 3-w1200.webp with maximum quality
+```
+
+Aspect ratio is preserved. With both dimensions, the image is fitted inside the
+specified area.
+
+### Format conversion
+
+```bash
+img-png photo.jpg
+# Creates photo.png
+
+img-webp photo.png
+# Creates photo.webp
+
+img-jpg photo.png
+# Creates photo.jpg
+
+img-webp -w 300 photo.jpg
+# Creates photo-w300.webp
+```
+
+Same-format conversion adds `-s`; use `-f` to overwrite the source:
+
+```bash
+img-png photo.png     # Creates photo-s.png
+img-png -f photo.png  # Replaces photo.png
+```
+
+### PNG conversion sets
+
+```bash
+png-webp icon.png
+# Creates icon.webp
+
+png-png-webp icon.png
+# Creates icon-s.png and icon.webp
+
+png-webp-jpg image.png
+# Creates image-s.png, image.webp, and image.jpg
+
+png-webp-jpg -w 300 -Q image.png
+# Creates image-w300.png, image-w300.webp, and image-w300.jpg
+```
+
+### img-trim
+
+```bash
+img-trim image.png
+# Creates image-trim.png
+
+img-trim -t -b image.png
+# Trims only the top and bottom
+```
+
+Side options: `-t` top, `-r` right, `-b` bottom, `-l` left.
+
 ## Development
 
 Test password generation:
