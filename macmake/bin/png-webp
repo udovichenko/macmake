@@ -1,16 +1,53 @@
 #!/usr/bin/env bash
 
-if [[ $# -eq 0 ]]; then
-	echo "Usage: $0 <source-png(s)>"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=img-options
+source "$script_dir/img-options"
+
+print_usage() {
+	echo "Usage: $(basename "$0") [-w pixels] [-h pixels] [-Q] <source-png(s)>"
+	img_print_size_options
+}
+
+if ! img_parse_options "$@"; then
+	print_usage
 	exit 1
 fi
 
-if ! command -v cwebp >/dev/null 2>&1; then
-	echo "cwebp not found"
+if [[ $IMG_SHOW_HELP -eq 1 ]]; then
+	print_usage
+	exit 0
+fi
+
+if [[ ${#IMG_SRC_FILES[@]} -eq 0 ]]; then
+	print_usage
 	exit 1
 fi
 
-for src_png in "$@"; do
+missing=()
+required_commands=(cwebp)
+if img_has_resize; then
+	required_commands+=(magick)
+fi
+for command_name in "${required_commands[@]}"; do
+	if ! command -v "$command_name" >/dev/null 2>&1; then
+		missing+=("$command_name")
+	fi
+done
+if [[ ${#missing[@]} -gt 0 ]]; then
+	echo "Missing required command(s): ${missing[*]}"
+	exit 1
+fi
+
+img_init_tmp_dirs
+trap img_cleanup_tmp_dirs EXIT
+
+webp_quality=(-q 90)
+if [[ $IMG_MAX_QUALITY -eq 1 ]]; then
+	webp_quality=(-lossless)
+fi
+
+for src_png in "${IMG_SRC_FILES[@]}"; do
 	if [[ ! -f "$src_png" ]]; then
 		echo "Source PNG '$src_png' does not exist"
 		continue
@@ -21,7 +58,7 @@ for src_png in "$@"; do
 		continue
 	fi
 
-	webp_file="${src_png%.png}.webp"
+	webp_file="${src_png%.png}$(img_size_suffix).webp"
 
 	if [[ -e "$webp_file" ]]; then
 		read -r -p "Replace existing '$webp_file'? [y/N] " replace
@@ -35,7 +72,12 @@ for src_png in "$@"; do
 		esac
 	fi
 
-	if cwebp -q 90 "$src_png" -o "$webp_file"; then
+	if ! img_prepare_input "$src_png"; then
+		echo "Failed to resize $src_png"
+		continue
+	fi
+
+	if cwebp "${webp_quality[@]}" "$IMG_PREPARED_INPUT" -o "$webp_file"; then
 		echo ""
 		echo "Converted $src_png to:"
 		echo "$webp_file"

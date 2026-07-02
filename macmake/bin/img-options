@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+
+# Shared option and resize helpers for the image commands in this directory.
+
+img_print_size_options() {
+	echo "  -w pixels  Resize to this width"
+	echo "  -h pixels  Resize to this height"
+	echo "  -Q         Use maximum output quality"
+}
+
+img_parse_options() {
+	IMG_WIDTH=""
+	IMG_HEIGHT=""
+	IMG_MAX_QUALITY=0
+	IMG_FORCE=0
+	IMG_SHOW_HELP=0
+	IMG_SRC_FILES=()
+
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+			-w|-h)
+				local option="$1"
+				shift
+				if [[ $# -eq 0 ]]; then
+					echo "Option $option requires a positive integer"
+					return 1
+				fi
+				if [[ "$1" != +([0-9]) || "$1" -eq 0 ]]; then
+					echo "Invalid size for $option: $1"
+					return 1
+				fi
+				if [[ "$option" == "-w" ]]; then
+					IMG_WIDTH="$1"
+				else
+					IMG_HEIGHT="$1"
+				fi
+				;;
+			-Q)
+				IMG_MAX_QUALITY=1
+				;;
+			-f)
+				if [[ "${IMG_ALLOW_FORCE:-0}" -ne 1 ]]; then
+					echo "Unknown option: $1"
+					return 1
+				fi
+				IMG_FORCE=1
+				;;
+			--help)
+				IMG_SHOW_HELP=1
+				;;
+			-*)
+				echo "Unknown option: $1"
+				return 1
+				;;
+			*)
+				IMG_SRC_FILES+=("$1")
+				;;
+		esac
+		shift
+	done
+}
+
+img_has_resize() {
+	[[ -n "$IMG_WIDTH" || -n "$IMG_HEIGHT" ]]
+}
+
+img_require_resize() {
+	if ! img_has_resize; then
+		echo "Specify at least one of -w or -h"
+		return 1
+	fi
+}
+
+img_size_suffix() {
+	local suffix=""
+
+	if [[ -n "$IMG_WIDTH" ]]; then
+		suffix="${suffix}w$IMG_WIDTH"
+	fi
+	if [[ -n "$IMG_HEIGHT" ]]; then
+		suffix="${suffix}h$IMG_HEIGHT"
+	fi
+
+	if [[ -n "$suffix" ]]; then
+		printf -- "-%s" "$suffix"
+	fi
+}
+
+img_resize_geometry() {
+	printf "%sx%s" "$IMG_WIDTH" "$IMG_HEIGHT"
+}
+
+img_init_tmp_dirs() {
+	IMG_TMP_DIRS=()
+}
+
+img_make_tmp_dir() {
+	local tmp_dir
+	tmp_dir="$(mktemp -d)"
+	IMG_TMP_DIRS+=("$tmp_dir")
+	IMG_TMP_DIR="$tmp_dir"
+}
+
+img_cleanup_tmp_dirs() {
+	local tmp_dir
+	for tmp_dir in "${IMG_TMP_DIRS[@]}"; do
+		if [[ -n "$tmp_dir" && -d "$tmp_dir" ]]; then
+			rm -rf "$tmp_dir"
+		fi
+	done
+}
+
+img_prepare_input() {
+	local src_file="$1"
+
+	IMG_PREPARED_INPUT="$src_file"
+	if ! img_has_resize; then
+		return 0
+	fi
+
+	img_make_tmp_dir
+	IMG_PREPARED_INPUT="$IMG_TMP_DIR/source.png"
+	magick "${src_file}[0]" -auto-orient -resize "$(img_resize_geometry)" "$IMG_PREPARED_INPUT"
+}

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+print_usage() {
+	echo "Usage: $(basename "$0") <image(s)>"
+}
+
+if [[ $# -eq 0 ]]; then
+	print_usage
+	exit 1
+fi
+
+if ! command -v magick >/dev/null 2>&1; then
+	echo "Missing required command: magick"
+	exit 1
+fi
+
+human_size() {
+	awk -v bytes="$1" 'BEGIN {
+		if (bytes < 1024) {
+			printf "%d B", bytes
+		} else if (bytes < 1024 * 1024) {
+			printf "%.0f K", bytes / 1024
+		} else {
+			printf "%.2f M", bytes / (1024 * 1024)
+		}
+	}'
+}
+
+for src_file in "$@"; do
+	if [[ ! -f "$src_file" ]]; then
+		echo "Source image '$src_file' does not exist"
+		continue
+	fi
+
+	dimensions="$(magick identify -format '%w x %h' "${src_file}[0]" 2>/dev/null)"
+	if [[ -z "$dimensions" ]]; then
+		echo "Failed to read image dimensions for '$src_file'"
+		continue
+	fi
+
+	file_size="$(wc -c < "$src_file" | tr -d '[:space:]')"
+	echo "$(basename "$src_file"): $dimensions, $(human_size "$file_size")"
+done

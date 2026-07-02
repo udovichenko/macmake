@@ -1,7 +1,26 @@
 #!/usr/bin/env bash
 
-if [[ $# -eq 0 ]]; then
-	echo "Usage: $0 <source-image(s)>"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=img-options
+source "$script_dir/img-options"
+
+print_usage() {
+	echo "Usage: $(basename "$0") [-w pixels] [-h pixels] [-Q] <source-image(s)>"
+	img_print_size_options
+}
+
+if ! img_parse_options "$@"; then
+	print_usage
+	exit 1
+fi
+
+if [[ $IMG_SHOW_HELP -eq 1 ]]; then
+	print_usage
+	exit 0
+fi
+
+if [[ ${#IMG_SRC_FILES[@]} -eq 0 ]]; then
+	print_usage
 	exit 1
 fi
 
@@ -19,17 +38,8 @@ if [[ ${#missing[@]} -gt 0 ]]; then
 	exit 1
 fi
 
-tmp_dirs=()
-
-cleanup() {
-	for tmp_dir in "${tmp_dirs[@]}"; do
-		if [[ -n "$tmp_dir" && -d "$tmp_dir" ]]; then
-			rm -rf "$tmp_dir"
-		fi
-	done
-}
-
-trap cleanup EXIT
+img_init_tmp_dirs
+trap img_cleanup_tmp_dirs EXIT
 
 lowercase() {
 	printf "%s" "$1" | tr "[:upper:]" "[:lower:]"
@@ -75,7 +85,14 @@ prompt_replace() {
 	esac
 }
 
-for src_file in "$@"; do
+webp_quality=(-q 90)
+jpg_quality=90
+if [[ $IMG_MAX_QUALITY -eq 1 ]]; then
+	webp_quality=(-lossless)
+	jpg_quality=100
+fi
+
+for src_file in "${IMG_SRC_FILES[@]}"; do
 	if [[ ! -f "$src_file" ]]; then
 		echo "Source file '$src_file' does not exist"
 		continue
@@ -93,26 +110,33 @@ for src_file in "$@"; do
 	fi
 
 	src_format="$(file_format "$src_ext")"
+	size_suffix="$(img_size_suffix)"
 	jpg_ext="jpg"
 	if [[ "$src_format" == "jpeg" && "$src_ext" == "jpeg" ]]; then
 		jpg_ext="jpeg"
 	fi
 
-	webp_file="$dir_name/$base_name.webp"
-	png_file="$dir_name/$base_name.png"
-	jpg_file="$dir_name/$base_name.$jpg_ext"
+	webp_file="$dir_name/$base_name$size_suffix.webp"
+	png_file="$dir_name/$base_name$size_suffix.png"
+	jpg_file="$dir_name/$base_name$size_suffix.$jpg_ext"
 
-	if [[ "$src_format" == "webp" ]]; then
+	if [[ -z "$size_suffix" && "$src_format" == "webp" ]]; then
 		webp_file="$dir_name/$base_name-s.webp"
 	fi
 
-	if [[ "$src_format" == "png" ]]; then
+	if [[ -z "$size_suffix" && "$src_format" == "png" ]]; then
 		png_file="$dir_name/$base_name-s.png"
 	fi
 
-	if [[ "$src_format" == "jpeg" ]]; then
+	if [[ -z "$size_suffix" && "$src_format" == "jpeg" ]]; then
 		jpg_file="$dir_name/$base_name-s.$jpg_ext"
 	fi
+
+	if ! img_prepare_input "$src_file"; then
+		echo "Failed to resize $src_file"
+		continue
+	fi
+	working_src="$IMG_PREPARED_INPUT"
 
 	tmp_png_file=""
 
@@ -121,27 +145,29 @@ for src_file in "$@"; do
 			return 0
 		fi
 
-		local tmp_dir
-		tmp_dir="$(mktemp -d)"
-		tmp_dirs+=("$tmp_dir")
-		tmp_png_file="$tmp_dir/source.png"
+		img_make_tmp_dir
+		tmp_png_file="$IMG_TMP_DIR/source.png"
 
-		magick "${src_file}[0]" -auto-orient "$tmp_png_file"
+		magick "${working_src}[0]" -auto-orient "$tmp_png_file"
 	}
 
 	echo ""
-	echo "Converting $src_file"
+	if img_has_resize; then
+		echo "Converting and resizing $src_file"
+	else
+		echo "Converting $src_file"
+	fi
 
 	if prompt_replace "$webp_file"; then
 		if [[ "$src_format" == "png" || "$src_format" == "jpeg" || "$src_format" == "tiff" || "$src_format" == "webp" ]]; then
-			if cwebp -q 90 "$src_file" -o "$webp_file"; then
+			if cwebp "${webp_quality[@]}" "$working_src" -o "$webp_file"; then
 				echo "Created $webp_file"
-			elif make_tmp_png && cwebp -q 90 "$tmp_png_file" -o "$webp_file"; then
+			elif make_tmp_png && cwebp "${webp_quality[@]}" "$tmp_png_file" -o "$webp_file"; then
 				echo "Created $webp_file"
 			else
 				echo "Failed to create $webp_file"
 			fi
-		elif make_tmp_png && cwebp -q 90 "$tmp_png_file" -o "$webp_file"; then
+		elif make_tmp_png && cwebp "${webp_quality[@]}" "$tmp_png_file" -o "$webp_file"; then
 			echo "Created $webp_file"
 		else
 			echo "Failed to create $webp_file"
@@ -150,14 +176,16 @@ for src_file in "$@"; do
 
 	if prompt_replace "$png_file"; then
 		if [[ "$src_format" == "png" ]]; then
-			png_input="$src_file"
+			png_input="$working_src"
 		elif make_tmp_png; then
 			png_input="$tmp_png_file"
 		else
 			png_input=""
 		fi
 
-		if [[ -n "$png_input" ]] && pngquant --force --quality=65-80 "$png_input" --output "$png_file"; then
+		if [[ -n "$png_input" && $IMG_MAX_QUALITY -eq 1 ]] && magick "$png_input" -define png:compression-level=9 "$png_file"; then
+			echo "Created $png_file"
+		elif [[ -n "$png_input" ]] && pngquant --force --quality=65-80 "$png_input" --output "$png_file"; then
 			echo "Created $png_file"
 		else
 			echo "Failed to create $png_file"
@@ -165,7 +193,7 @@ for src_file in "$@"; do
 	fi
 
 	if prompt_replace "$jpg_file"; then
-		if magick "${src_file}[0]" -auto-orient -background white -alpha remove -alpha off -quality 90 "$jpg_file"; then
+		if magick "${working_src}[0]" -auto-orient -background white -alpha remove -alpha off -quality "$jpg_quality" "$jpg_file"; then
 			echo "Created $jpg_file"
 		else
 			echo "Failed to create $jpg_file"

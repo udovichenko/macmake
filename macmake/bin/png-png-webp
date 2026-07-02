@@ -1,11 +1,56 @@
 #!/usr/bin/env bash
 
-if [[ $# -eq 0 ]]; then
-	echo-error "Usage: $0 png-to-png-and-webp <source-png-icon(s)>"
-	return 1
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=img-options
+source "$script_dir/img-options"
+
+print_usage() {
+	echo "Usage: $(basename "$0") [-w pixels] [-h pixels] [-Q] <source-png-icon(s)>"
+	img_print_size_options
+}
+
+if ! img_parse_options "$@"; then
+	print_usage
+	exit 1
 fi
 
-for src_icon in "$@"; do
+if [[ $IMG_SHOW_HELP -eq 1 ]]; then
+	print_usage
+	exit 0
+fi
+
+if [[ ${#IMG_SRC_FILES[@]} -eq 0 ]]; then
+	print_usage
+	exit 1
+fi
+
+missing=()
+required_commands=(cwebp)
+if img_has_resize || [[ $IMG_MAX_QUALITY -eq 1 ]]; then
+	required_commands+=(magick)
+fi
+if [[ $IMG_MAX_QUALITY -eq 0 ]]; then
+	required_commands+=(pngquant)
+fi
+for command_name in "${required_commands[@]}"; do
+	if ! command -v "$command_name" >/dev/null 2>&1; then
+		missing+=("$command_name")
+	fi
+done
+if [[ ${#missing[@]} -gt 0 ]]; then
+	echo "Missing required command(s): ${missing[*]}"
+	exit 1
+fi
+
+img_init_tmp_dirs
+trap img_cleanup_tmp_dirs EXIT
+
+webp_quality=(-q 90)
+if [[ $IMG_MAX_QUALITY -eq 1 ]]; then
+	webp_quality=(-lossless)
+fi
+
+for src_icon in "${IMG_SRC_FILES[@]}"; do
 	if [[ ! -f "$src_icon" ]]; then
 		echo-error "Source icon '$src_icon' does not exist"
 		continue
@@ -13,12 +58,28 @@ for src_icon in "$@"; do
 
 	base_name="$(basename "$src_icon" .png)"
 	dir_name="$(dirname "$src_icon")"
+	size_suffix="$(img_size_suffix)"
+	png_suffix="-s"
+	if [[ -n "$size_suffix" ]]; then
+		png_suffix="$size_suffix"
+	fi
+	png_file="$dir_name/$base_name$png_suffix.png"
+	webp_file="$dir_name/$base_name$size_suffix.webp"
 
-	pngquant --quality=65-80 "$src_icon" --output "$dir_name/$base_name-s.png"
-	cwebp -q 90 "$src_icon" -o "$dir_name/$base_name.webp"
+	if ! img_prepare_input "$src_icon"; then
+		echo "Failed to resize $src_icon"
+		continue
+	fi
+
+	if [[ $IMG_MAX_QUALITY -eq 1 ]]; then
+		magick "$IMG_PREPARED_INPUT" -define png:compression-level=9 "$png_file"
+	else
+		pngquant --force --quality=65-80 "$IMG_PREPARED_INPUT" --output "$png_file"
+	fi
+	cwebp "${webp_quality[@]}" "$IMG_PREPARED_INPUT" -o "$webp_file"
 
 	echo ""
 	echo "Converted $src_icon to:"
-	echo "$dir_name/$base_name-s.png"
-	echo "$dir_name/$base_name.webp"
+	echo "$png_file"
+	echo "$webp_file"
 done

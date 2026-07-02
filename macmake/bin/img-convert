@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=img-options
+source "$script_dir/img-options"
+
 tool_name="${IMG_CONVERT_TOOL:-$(basename "$0")}"
 target_format="${IMG_CONVERT_FORMAT:-}"
 
@@ -13,12 +17,21 @@ case "$tool_name" in
 	img-png)
 		target_format="png"
 		;;
+	img-resize)
+		target_format="preserve"
+		;;
 esac
 
 print_usage() {
-	echo "Usage: $tool_name [-f] <source-image(s)>"
-	echo "Without -f, same-format sources are written as name-s.$target_format."
-	echo "With -f, the target file is overwritten."
+	if [[ "$tool_name" == "img-resize" ]]; then
+		echo "Usage: $tool_name (-w pixels | -h pixels) [-Q] <source-image(s)>"
+		echo "Creates resized images next to their sources and preserves aspect ratio."
+	else
+		echo "Usage: $tool_name [-f] [-w pixels] [-h pixels] [-Q] <source-image(s)>"
+		echo "Without -f, same-format sources are written as name-s.$target_format."
+		echo "With -f, the target file is overwritten when no resize is requested."
+	fi
+	img_print_size_options
 }
 
 if [[ -z "$target_format" ]]; then
@@ -31,72 +44,33 @@ if [[ $# -eq 0 ]]; then
 	exit 1
 fi
 
-force=0
-src_files=()
+# Read by the sourced option parser.
+# shellcheck disable=SC2034
+IMG_ALLOW_FORCE=1
+if ! img_parse_options "$@"; then
+	print_usage
+	exit 1
+fi
+force="$IMG_FORCE"
+src_files=("${IMG_SRC_FILES[@]}")
 
-while [[ $# -gt 0 ]]; do
-	case "$1" in
-		-f)
-			force=1
-			;;
-		-h|--help)
-			print_usage
-			exit 0
-			;;
-		-*)
-			echo "Unknown option: $1"
-			print_usage
-			exit 1
-			;;
-		*)
-			src_files+=("$1")
-			;;
-	esac
-	shift
-done
+if [[ $IMG_SHOW_HELP -eq 1 ]]; then
+	print_usage
+	exit 0
+fi
+
+if [[ "$tool_name" == "img-resize" ]] && ! img_require_resize; then
+	print_usage
+	exit 1
+fi
 
 if [[ ${#src_files[@]} -eq 0 ]]; then
 	print_usage
 	exit 1
 fi
 
-missing=()
-
-case "$target_format" in
-	jpg)
-		required_commands=(magick)
-		;;
-	webp)
-		required_commands=(cwebp magick)
-		;;
-	png)
-		required_commands=(pngquant magick)
-		;;
-esac
-
-for command_name in "${required_commands[@]}"; do
-	if ! command -v "$command_name" >/dev/null 2>&1; then
-		missing+=("$command_name")
-	fi
-done
-
-if [[ ${#missing[@]} -gt 0 ]]; then
-	echo "Missing required command(s): ${missing[*]}"
-	echo "Install them and run this command again."
-	exit 1
-fi
-
-tmp_dirs=()
-
-cleanup() {
-	for tmp_dir in "${tmp_dirs[@]}"; do
-		if [[ -n "$tmp_dir" && -d "$tmp_dir" ]]; then
-			rm -rf "$tmp_dir"
-		fi
-	done
-}
-
-trap cleanup EXIT
+img_init_tmp_dirs
+trap img_cleanup_tmp_dirs EXIT
 
 lowercase() {
 	printf "%s" "$1" | tr "[:upper:]" "[:lower:]"
@@ -125,6 +99,8 @@ file_format() {
 output_file_name() {
 	local src_file="$1"
 	local src_format="$2"
+	local output_format="$3"
+	local output_ext="$output_format"
 	local file_name
 	local dir_name
 	local base_name
@@ -139,12 +115,16 @@ output_file_name() {
 		base_name="$file_name"
 	fi
 
-	suffix=""
-	if [[ $force -eq 0 && "$src_format" == "$target_format" ]]; then
+	if [[ "$target_format" == "preserve" ]]; then
+		output_ext="${file_name##*.}"
+	fi
+
+	suffix="$(img_size_suffix)"
+	if [[ -z "$suffix" && $force -eq 0 && "$src_format" == "$output_format" ]]; then
 		suffix="-s"
 	fi
 
-	echo "$dir_name/$base_name$suffix.$target_format"
+	echo "$dir_name/$base_name$suffix.$output_ext"
 }
 
 same_file() {
@@ -155,22 +135,18 @@ same_file() {
 }
 
 make_tmp_dir() {
-	local tmp_dir
-	tmp_dir="$(mktemp -d)"
-	tmp_dirs+=("$tmp_dir")
-	echo "$tmp_dir"
+	img_make_tmp_dir
 }
 
 final_output_path() {
 	local src_file="$1"
 	local output_file="$2"
-	local tmp_dir
 
 	if [[ -e "$output_file" ]] && same_file "$src_file" "$output_file"; then
-		tmp_dir="$(make_tmp_dir)"
-		echo "$tmp_dir/output.$target_format"
+		make_tmp_dir
+		FINAL_OUTPUT_PATH="$IMG_TMP_DIR/output.$target_format"
 	else
-		echo "$output_file"
+		FINAL_OUTPUT_PATH="$output_file"
 	fi
 }
 
@@ -188,9 +164,15 @@ convert_to_jpg() {
 	local output_file="$2"
 	local tmp_output_file
 
-	tmp_output_file="$(final_output_path "$src_file" "$output_file")"
+	final_output_path "$src_file" "$output_file"
+	tmp_output_file="$FINAL_OUTPUT_PATH"
 
-	if magick "${src_file}[0]" -auto-orient -background white -alpha remove -alpha off -quality 90 "$tmp_output_file"; then
+	local quality=90
+	if [[ $IMG_MAX_QUALITY -eq 1 ]]; then
+		quality=100
+	fi
+
+	if magick "${src_file}[0]" -auto-orient -background white -alpha remove -alpha off -quality "$quality" "$tmp_output_file"; then
 		finish_output "$tmp_output_file" "$output_file"
 	else
 		return 1
@@ -203,17 +185,24 @@ convert_to_webp() {
 	local tmp_output_file
 	local tmp_dir
 	local tmp_png_file
+	local webp_quality=(-q 90)
 
-	tmp_output_file="$(final_output_path "$src_file" "$output_file")"
+	if [[ $IMG_MAX_QUALITY -eq 1 ]]; then
+		webp_quality=(-lossless)
+	fi
 
-	if cwebp -q 90 "$src_file" -o "$tmp_output_file"; then
+	final_output_path "$src_file" "$output_file"
+	tmp_output_file="$FINAL_OUTPUT_PATH"
+
+	if cwebp "${webp_quality[@]}" "$src_file" -o "$tmp_output_file"; then
 		finish_output "$tmp_output_file" "$output_file"
 		return 0
 	fi
 
-	tmp_dir="$(make_tmp_dir)"
+	make_tmp_dir
+	tmp_dir="$IMG_TMP_DIR"
 	tmp_png_file="$tmp_dir/source.png"
-	if magick "${src_file}[0]" -auto-orient "$tmp_png_file" && cwebp -q 90 "$tmp_png_file" -o "$tmp_output_file"; then
+	if magick "${src_file}[0]" -auto-orient "$tmp_png_file" && cwebp "${webp_quality[@]}" "$tmp_png_file" -o "$tmp_output_file"; then
 		finish_output "$tmp_output_file" "$output_file"
 		return 0
 	fi
@@ -229,19 +218,27 @@ convert_to_png() {
 	local tmp_dir
 	local png_input
 
-	tmp_output_file="$(final_output_path "$src_file" "$output_file")"
+	final_output_path "$src_file" "$output_file"
+	tmp_output_file="$FINAL_OUTPUT_PATH"
 
 	if [[ "$src_format" == "png" ]]; then
 		png_input="$src_file"
 	else
-		tmp_dir="$(make_tmp_dir)"
+		make_tmp_dir
+		tmp_dir="$IMG_TMP_DIR"
 		png_input="$tmp_dir/source.png"
 		if ! magick "${src_file}[0]" -auto-orient "$png_input"; then
 			return 1
 		fi
 	fi
 
-	if pngquant --force --quality=65-80 "$png_input" --output "$tmp_output_file"; then
+	if [[ $IMG_MAX_QUALITY -eq 1 ]]; then
+		if magick "$png_input" -define png:compression-level=9 "$tmp_output_file"; then
+			finish_output "$tmp_output_file" "$output_file"
+		else
+			return 1
+		fi
+	elif pngquant --force --quality=65-80 "$png_input" --output "$tmp_output_file"; then
 		finish_output "$tmp_output_file" "$output_file"
 	else
 		return 1
@@ -261,28 +258,73 @@ for src_file in "${src_files[@]}"; do
 		src_ext=""
 	fi
 	src_format="$(file_format "$src_ext")"
-	output_file="$(output_file_name "$src_file" "$src_format")"
+	effective_format="$target_format"
+	if [[ "$target_format" == "preserve" ]]; then
+		effective_format="$src_format"
+	fi
+
+	case "$effective_format" in
+		jpg|webp|png)
+			;;
+		*)
+			echo "Unsupported image format for '$src_file': ${src_ext:-unknown}"
+			continue
+			;;
+	esac
+
+	required_commands=(magick)
+	if [[ "$effective_format" == "webp" ]]; then
+		required_commands+=(cwebp)
+	elif [[ "$effective_format" == "png" && $IMG_MAX_QUALITY -eq 0 ]]; then
+		required_commands+=(pngquant)
+	fi
+	missing=()
+	for command_name in "${required_commands[@]}"; do
+		if ! command -v "$command_name" >/dev/null 2>&1; then
+			missing+=("$command_name")
+		fi
+	done
+	if [[ ${#missing[@]} -gt 0 ]]; then
+		echo "Missing required command(s): ${missing[*]}"
+		continue
+	fi
+
+	output_file="$(output_file_name "$src_file" "$src_format" "$effective_format")"
 
 	echo ""
-	echo "Converting $src_file"
+	if img_has_resize; then
+		echo "Converting and resizing $src_file"
+	else
+		echo "Converting $src_file"
+	fi
 
-	case "$target_format" in
+	if ! img_prepare_input "$src_file"; then
+		echo "Failed to resize $src_file"
+		continue
+	fi
+	input_file="$IMG_PREPARED_INPUT"
+
+	case "$effective_format" in
 		jpg)
-			if convert_to_jpg "$src_file" "$output_file"; then
+			if convert_to_jpg "$input_file" "$output_file"; then
 				echo "Created $output_file"
 			else
 				echo "Failed to create $output_file"
 			fi
 			;;
 		webp)
-			if convert_to_webp "$src_file" "$output_file"; then
+			if convert_to_webp "$input_file" "$output_file"; then
 				echo "Created $output_file"
 			else
 				echo "Failed to create $output_file"
 			fi
 			;;
 		png)
-			if convert_to_png "$src_file" "$output_file" "$src_format"; then
+			input_format="$src_format"
+			if img_has_resize; then
+				input_format="png"
+			fi
+			if convert_to_png "$input_file" "$output_file" "$input_format"; then
 				echo "Created $output_file"
 			else
 				echo "Failed to create $output_file"

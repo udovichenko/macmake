@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMG_CONVERT_TOOL=img-resize IMG_CONVERT_FORMAT=preserve exec "$script_dir/img-convert" "$@"
