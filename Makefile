@@ -43,7 +43,9 @@ base-auth-gen: # generate htpasswd. Usage: make base-auth-gen u=username
 	htpasswd -n "$(u)"
 
 brew-upgrade: # upgrade brew packages
-	./macmake/brew-upgrade.sh
+	brew update
+	HOMEBREW_NO_ASK=1 brew upgrade
+	brew cleanup
 
 calc: # calculate responsive CSS value. Usage: make calc v=10,20,380,1440 or make calc v=16,24
 	if [ -z "$(v)" ]; then echo "Usage: make calc v=size1,size2[,breakpoint1,breakpoint2]"; exit 1; fi
